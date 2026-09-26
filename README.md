@@ -16,6 +16,10 @@ python3 -m venv .venv
 
 Open http://127.0.0.1:8000. Direct loopback requests receive a short-lived HttpOnly owner session. Forwarded requests do not. The owner dashboard is never an anonymous data API. Start with **Try a scenario**, or **New inquiry** for the manual, confirmation-gated path.
 
+For the video, open **http://127.0.0.1:8000/demo#campaigns** (also supported: `/?demo=1#campaigns`). Create maintenance previews, review English/French/Mandarin, approve, and **Activate sample campaign**. Select **中文**, then **Open customer preview**. Follow localized quick replies through consent, fictional contact details, SMS choice, slot selection and explicit readback confirmation. An English owner handoff updates alongside the conversation. The outcome links the appointment, unsent SMS preview and accurate demo results to the originating campaign. **Reset demo** or reload starts another take. This mode uses in-memory browser data, not owner APIs or external providers. Full [90–120 second click-by-click script](docs/DEMO.md).
+
+This connected recording-flow extension has been source-reviewed only; no tests, syntax checks, browser interactions or provider calls were run for this update. Earlier verification claims below concern the pre-existing backend/owner workflow, not this extension. Browser behavior and layout still require a requested verification pass.
+
 The three-day calendar is generated from the current Toronto date, excluding weekends. SQLite state persists in `data/frontdesk.sqlite3`. To start a fresh demonstration without deleting old data, stop the server and launch with a new path:
 
 ```sh
@@ -30,6 +34,8 @@ DB_PATH=data/new-demo.sqlite3 .venv/bin/python -m uvicorn app.main:app --host 12
 | Range quotes, booking confirmation, atomic slot reservation | Implemented; automated tests |
 | Pipeline metrics | Estimates only; booked leads excluded from open pipeline |
 | Synthetic scenarios | Real local DB writes; no calls, speech processing, or SMS |
+| Multilingual campaign studio | Interactive sample copy in English, French, and Mandarin; approval and launch are simulated in the browser; no ads or marketing texts are sent |
+| Connected recording journey | Scripted customer/English handoff, consented appointment outcome and campaign attribution implemented in browser memory; runtime unverified |
 | SMS templates | Preview by default; live Twilio adapter requires opt-in credentials and consenting allowlist |
 | Voice widget | Activation path implemented; requires a configured agent; not live-validated |
 | Agent webhook tools | Authenticated endpoints implemented; provider configuration required |
@@ -51,9 +57,12 @@ Generate different long random values for `ADMIN_TOKEN` and `AGENT_SECRET`. For 
 
 ## Test
 
+Run or add tests only when explicitly requested. Existing checks are not comprehensive coverage of the new campaign/journey flow.
+
 ```sh
 .venv/bin/python -m pytest -q
 .venv/bin/python -m scripts.tool_manifest
+node --test tests/demo.test.cjs
 ```
 
 Tests cover authentication, consent, schema validation, idempotency, concurrent booking, emergency gates, non-duplicated pipeline, SMS previews/allowlists, signed webhook replay and persistence. No test places calls or sends messages. A dependency currently emits an httpx TestClient deprecation warning; tests still execute.
@@ -61,6 +70,8 @@ Tests cover authentication, consent, schema validation, idempotency, concurrent 
 ## Architecture
 
 `static/` is a responsive, framework-free owner UI. `app/main.py` owns HTTP/authentication; `models.py` validates input; `store.py` owns transactional rules and evidence; `providers.py` owns SMS delivery. ElevenLabs interprets the conversation but calls validated backend operations. The model cannot invent prices or write directly to the database.
+
+Recording mode is a separate execution boundary within the same UI: `static/demo.js` owns campaigns → journeys → leads → bookings → message previews. It uses deterministic paired fixtures rather than ElevenLabs, and refuses to fall through to backend requests. One journey is reused per campaign/language; a second campaign has distinct IDs and attribution. Counts come from records, never display increments. Existing journeys retain their offer version if a campaign is edited. Only confirmed bookings contribute to **Illustrative booked value**. A declined SMS choice still permits a booking; an SMS failure leaves the appointment intact. Custom area names are preserved verbatim, not translated; the contact fixture stays in Waterloo. Fonts are local fallbacks, with no external font request.
 
 Consent-gated intake creates a stable lead. The booking reads from the server rate card and calendar; a unique slot constraint prevents collisions. Tools return actual outcomes. Post-call receipts are independent evidence, not a prerequisite for an already-confirmed booking. Provider failure must not turn success into a false claim or trigger repeated external sends.
 
