@@ -1,0 +1,12 @@
+.venv/
+.env
+.env.*
+!.env.example
+__pycache__/
+.pytest_cache/
+*.pyc
+data/
+*.sqlite*
+.DS_Store
+artifacts/
+build-plans/
