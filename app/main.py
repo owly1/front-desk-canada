@@ -120,7 +120,7 @@ def create_app(settings=None):
 
     @app.post("/tools/log_lead", dependencies=[Depends(agent)])
     def tool_register(data: Inquiry):
-        return register(data)
+        return register(data.model_copy(update={"source": "elevenlabs"}))
 
     @app.post("/api/leads", dependencies=[Depends(admin)])
     def manual_register(data: Inquiry):

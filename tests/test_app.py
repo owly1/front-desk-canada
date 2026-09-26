@@ -189,3 +189,59 @@ def test_persistence_and_non_dispatched_callback(setup):
     store.callback(lead['id'])
     fresh=create_app(config).state.store.state()
     assert len(fresh['leads'])==1 and len(fresh['callbacks'])==1
+
+
+def test_agent_source_cannot_be_spoofed(setup):
+    client,_,_=setup
+    result=client.post('/tools/log_lead',json=inquiry(source='simulation'),headers=AGENT)
+    assert result.json()['source']=='elevenlabs'
+
+
+def test_live_sms_reservation_prevents_duplicate_send(setup, monkeypatch):
+    import app.providers as providers
+    import httpx
+    client,store,config=setup
+    b=book(store)
+    config.live_sms=True
+    config.twilio_sid='ACtest'
+    config.twilio_token='not-real'
+    config.twilio_from='+12265550149'
+    config.sms_allowlist=('+12265550147',)
+    sent=[]
+    class FakeClient:
+        def __init__(self,**kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self,*args): pass
+        async def post(self,url,**kwargs):
+            sent.append(kwargs['data'])
+            return httpx.Response(201,json={'sid':'SM-fixture'})
+    monkeypatch.setattr(providers.httpx,'AsyncClient',FakeClient)
+    first=client.post('/api/sms',json={'booking_id':b['id']},headers=OWNER).json()
+    assert first['status']=='provider_accepted' and not first['delivered']
+    client.post('/api/sms',json={'booking_id':b['id']},headers=OWNER)
+    assert len(sent)==1 and sent[0]['To']=='+12265550147'
+
+
+def test_sms_ambiguous_timeout_not_retried(setup, monkeypatch):
+    import app.providers as providers
+    import httpx
+    client,store,config=setup
+    b=book(store)
+    config.live_sms=True
+    config.twilio_sid='ACtest'
+    config.twilio_token='not-real'
+    config.twilio_from='+12265550149'
+    config.sms_allowlist=('+12265550147',)
+    attempts=[]
+    class FakeClient:
+        def __init__(self,**kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self,*args): pass
+        async def post(self,*args,**kwargs):
+            attempts.append(1)
+            raise httpx.ReadTimeout('fixture timeout')
+    monkeypatch.setattr(providers.httpx,'AsyncClient',FakeClient)
+    first=client.post('/api/sms',json={'booking_id':b['id']},headers=OWNER).json()
+    assert first['status']=='unknown_review_required'
+    client.post('/api/sms',json={'booking_id':b['id']},headers=OWNER)
+    assert len(attempts)==1
